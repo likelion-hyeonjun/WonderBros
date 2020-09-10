@@ -1,0 +1,5 @@
+data/
+GroceryStoreDataset-master/
+__pycache__/
+checkpoints/*.pkl
+*.ipynb
