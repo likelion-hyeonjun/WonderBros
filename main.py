@@ -10,6 +10,7 @@ from torchvision.datasets import ImageFolder
 from deformable_filter import *
 from stn_conv import *
 from data.CUB_dataset import CubDataset
+from model.resnet_STN import resnet_multi_stn101
 
 import os
 import argparse
@@ -27,7 +28,6 @@ def str2bool(v):
     else:
         raise argparse.ArgumentTypeError('Boolean value expected.')
 
-#오늘 모델돌릴수있는데까지 짜고 내일 state이거해야겠다
 parser = argparse.ArgumentParser(description='GroceryDataset Training with VGG, ResNet and DenseNet')
 parser.add_argument('--model', 
                     default ='vgg19',
@@ -40,9 +40,9 @@ parser.add_argument('--opt', default='SGD', help='optimizer')
 parser.add_argument('--freeze', type=str2bool ,default="true", help='true: fine-tuning for only classifier layer, false: fine-tuning for whole layer (with pretrained)')
 
 args = parser.parse_args()
-# DataSet
+
 print('==> Preparing data..')
-# 추가해야할 부분 fint turning 관련된 arg, data augmentation 관련 arg
+
 train_transform = transforms.Compose([
     transforms.ToPILImage(),
     transforms.Resize(280),
@@ -73,17 +73,7 @@ test_dataset , valid_dataset = torch.utils.data.random_split(test_dataset, (num_
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
-# preprocess_densenet = transforms.Compose([
-#     transforms.RandomResizedCrop(224),
-#     transforms.ToTensor(),
-#     transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))
-# ])
 
-# preprocess_vgg = transforms.Compose([
-#     transforms.RandomResizedCrop(224),
-#     transforms.ToTensor(),
-#     transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
-# ])
 
 # preprocess_resnet = transforms.Compose([
 #     transforms.RandomResizedCrop(224),
@@ -91,12 +81,7 @@ device = 'cuda' if torch.cuda.is_available() else 'cpu'
 #     transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
 # ])
 
-# if 'vgg' in args.model :
-#     preprocess = preprocess_vgg
-# elif 'resnet' in args.model :
-#     preprocess = preprocess_resnet
-# elif 'densenet' in args.model :
-#     preprocess = preprocess_densenet
+
 
 # trainDataPath = trainDataPath = os.getcwd()+"/GroceryStoreDataset-master/dataset/train/Packages"
 # train_dataset = ImageFolder(root=trainDataPath, transform = preprocess)
@@ -116,10 +101,8 @@ valid_loader = torch.utils.data.DataLoader(valid_dataset,
                                            batch_size = args.test_batch_size,
                                            shuffle = False,
                                            num_workers=4)
-# print(len(test_dataset))
-# Model
-# print('==> Building model..')
 
+# Grocery dataset을 사용할때 필요한 classes들. 
 # classes = ('Alpro-Blueberry-Soyghurt','Alpro-Fresh-Soy-Milk',
 #             'Alpro-Shelf-Soy-Milk', 'Alpro-Vanilla-Soyghurt',
 #             'Arla-Ecological-Medium-Fat-Milk', 'Arla-Ecological-Sour-Cream',
@@ -138,25 +121,22 @@ valid_loader = torch.utils.data.DataLoader(valid_dataset,
 #             'Yoggi-Vanilla-Yoghurt')
 
 
-#resume일 경우?
-model = fineTuningModel(args.model, 200, args.freeze, True) #is freeze, pretrained 넣어주기
 
-#use deformable !!should modify
+model = fineTuningModel(args.model, 200, args.freeze, True) 
+#STN model 사용시 아래와 같은 코드를 통해 model 넣어주기 .
+#model = resnet_multi_stn101(pretrained=True, num_classes=200, p=0)
+
+# model slightly chaning part
+# deformable 로 바꾸기 위해선 model.layer4[2].conv = deformable_filter(512,512) 와 같이 input/ out channel 맞춰서 넣어주기 
 if args.model == 'resnet101':
-    # #denseblock 4, denselayer16, last conv filter #model layer 0은 stride 2로 되있어서 안됨. ㅅㅂ
-    #model.layer4[1].conv2 = deformable_filter(512,512)
     model.layer4[2].conv2 = deformable_filter(512,512)
-    #conv1 = model.conv1
-    #model.conv1 = nn.Sequential(stn_conv(224,224,3),conv1)
+    
 
-print(model)
+
 criterion = nn.CrossEntropyLoss()
 optimizer = optim.SGD(model.parameters(), lr=args.lr,
                       momentum=0.9, weight_decay=5e-4)
 exp_lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.1)
-#그냥 트레인으로만들자..  early stopping 넣어서
-#해야할거 validation set만들기 그리고 train에 early stopping 하기. 
-# train때 load state dict하기 
 
 saved_model = 'checkpoints/for_test'
 
